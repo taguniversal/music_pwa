@@ -11,7 +11,43 @@ const Visualizer = {
       let currentAudio = null;
       let isPlaying = false;
       let visualMode = 'bars';
+
+      const draw = () => {
+        if (!isPlaying) return;
+        visualMode === 'bars' ? drawBars() : drawWaveform();
+        requestAnimationFrame(draw);
+      };
+
+
+      function createBeepSound(context) {
+        const sampleRate = 44100;
+        const duration = 2.0;       // 2 seconds
+        const startFreq = 220;      // Start at A3
+        const endFreq = 880;        // Sweep up to A5
+        const volume = 0.5;
+        
+        const arrayBuffer = context.createBuffer(1, sampleRate * duration, sampleRate);
+        const channelData = arrayBuffer.getChannelData(0);
+        
+        for (let i = 0; i < sampleRate * duration; i++) {
+          // Calculate frequency at this point in time
+          const t = i / sampleRate;
+          const freq = startFreq + (endFreq - startFreq) * (t / duration);
+          
+          // Phase accumulation for smooth frequency change
+          const phase = 2 * Math.PI * freq * t;
+          
+          // Add envelope to avoid clicks
+          const envelope = Math.min(1, 10 * t) * Math.min(1, 10 * (duration - t));
+          
+          channelData[i] = Math.sin(phase) * volume * envelope;
+        }
       
+        const source = context.createBufferSource();
+        source.buffer = arrayBuffer;
+        return source;
+      }
+
       const drawBars = () => {
         const bufferLength = analyser.frequencyBinCount;
         const dataArray = new Uint8Array(bufferLength);
@@ -61,50 +97,48 @@ const Visualizer = {
         ctx.lineTo(canvas.width, canvas.height/2);
         ctx.stroke();
       };
-      
+
+      window.addEventListener('keypress', (e) => {
+        if (e.key === 'v') {
+          visualMode = visualMode === 'bars' ? 'waveform' : 'bars';
+        }
+      });
+
       this.el.addEventListener('click', async () => {
         try {
+          console.log("Click detected");
           if (isPlaying) {
-            // Stop current playback
-            currentAudio.pause();
-            currentAudio.currentTime = 0;
+            console.log("Stopping audio");
+            currentAudio.stop();
             isPlaying = false;
             return;
           }
-  
-          // Create AudioContext on first play
+
+          console.log("Starting new audio");
           if (!audioCtx) {
             audioCtx = new (window.AudioContext || window.webkitAudioContext)();
             analyser = audioCtx.createAnalyser();
             analyser.fftSize = 2048;
+            console.log("Created new AudioContext:", audioCtx.state);
           }
-          
+
           await audioCtx.resume();
-          currentAudio = new Audio('/audio/Tataki.mp3');
-          const source = audioCtx.createMediaElementSource(currentAudio);
-          source.connect(analyser);
+          console.log("AudioContext resumed:", audioCtx.state);
+          currentAudio = createBeepSound(audioCtx);
+          console.log("Created beep sound");
+          currentAudio.connect(analyser);
           analyser.connect(audioCtx.destination);
-          currentAudio.play();
+          currentAudio.start();
+          console.log("Started audio playback");
           isPlaying = true;
           draw();
         } catch (err) {
           console.error('Error:', err);
         }
       });
-  
-      const draw = () => {
-        if (!isPlaying) return;
-        visualMode === 'bars' ? drawBars() : drawWaveform();
-        requestAnimationFrame(draw);
-      };
 
-      // Add key press to toggle visualization
-      window.addEventListener('keypress', (e) => {
-        if (e.key === 'v') {
-          visualMode = visualMode === 'bars' ? 'waveform' : 'bars';
-        }
-      });
+
     }
-  };
+};
 
-  export default Visualizer
+export default Visualizer
